@@ -1,0 +1,610 @@
+<html>
+<head>
+<script type="text/javascript" src="https://code.jquery.com/jquery-3.3.1.js"></script>
+
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.16/css/jquery.dataTables.css"/>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.16/js/jquery.dataTables.js"></script>
+
+<script>
+//<!--
+'use strict';
+
+class Pos3D {
+  constructor(x, y, z) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+
+  toString() {
+    return "(" + this.x + "," + this.y + "," + this.z + ")";
+  }
+}
+
+var parsers = {};
+
+class MissionLog {
+  constructor(basename) {
+    this.basename      = basename;
+    this.entries       = [];
+    this.curObjects    = {};
+    this.allObjects    = {};
+    this.groups        = {};
+    this.files         = {};
+    this.parseIndex    = 0;
+    this.reader        = new FileReader();
+    this.reader.onload = () => this.parseFile();
+
+    var match = this.baseRegexp.exec(basename);
+    this.realTime = new Date(match[1], match[2] - 1, match[3], match[4], match[5], match[6]);
+  }
+
+  parseFile() {
+    for (var line of this.reader.result.split("\r\n")) {
+      var match = this.lineRegexp.exec(line);
+
+      if (match) {
+        var time  = new Date(match[1] * 20);
+        var atype = match[2];
+
+        if (parsers[atype])
+          parsers[atype](this, line, time, match[3]);
+        else
+          LogEntry.parse(this, line, time, match[3]);
+      }
+    }
+
+    this.parseIndex++;
+    document.getElementById("progressBar").value++;
+    this.parseNext();
+  }
+
+  parseNext() {
+    if (this.files[this.parseIndex]) {
+      this.reader.readAsText(this.files[this.parseIndex]);
+    } else {
+      this.reader = null;
+      var optionElt = document.createElement("option");
+      optionElt.textContent = this.basename;
+      document.getElementById("missionSelector").appendChild(optionElt);
+      console.log(missionLogs);
+    }
+  }
+
+  getObject(id) {
+    if (!(id >= 0))
+      return null;
+
+    if (!this.curObjects[id])
+      new GameObject(this, id);
+
+    return this.curObjects[id];
+  }
+}
+MissionLog.prototype.baseRegexp = /^missionReport\((.+)-(.+)-(.+)_(.+)-(.+)-(.+)\)$/;
+MissionLog.prototype.lineRegexp = /^T:(\d+) AType:(\d+) (.*)$/;
+
+var missionLogs = {};
+
+class GameObject {
+  constructor(log, id, gen = 1) {
+    this.id               = parseInt(id);
+    this.gen              = gen;
+    this.uid              = this.id + "_" + gen;
+    this.type             = null;
+    this.country          = null;
+    this.name             = null;
+    this.group            = null;
+    this.parent           = null;
+    this.role             = null;
+    this.children         = [];
+    this.events           = [];
+    this.attackerHits     = [];
+    this.targetHits       = [];
+    this.attackerDamage   = {};
+    this.targetDamage     = {};
+    this.cumulativeDamage = 0;
+    this.kills            = [];
+    this.killedBy         = null;
+
+    log.curObjects[id] = this;
+
+    console.assert(!log.allObjects[this.uid]);
+    log.allObjects[this.uid] = this;
+  }
+
+  describe(context) {
+    if (this.role != null && this.parent != null) {
+      return document.createTextNode(this.role).textContent + ":" + this.parent.describe(context);
+    }
+
+    var text;
+
+    if (this.name != null)
+      text = document.createTextNode(this.name.split(",")[0]).textContent;
+
+    if (this.type != this.name)
+      text += " (" + document.createTextNode(this.type).textContent + ")";
+
+    return text;
+  }
+}
+
+function parseVersion (log, line, time, data) {
+  var regexp = /^VER:(.+)/;
+
+  var match = regexp.exec(data);
+
+  if (match)
+    console.assert(match[1] == 17);
+}
+parsers[15] = parseVersion;
+
+class GameGroup {
+  constructor(log, id, members, leader) {
+    this.id      = parseInt(id);
+    this.members = members;
+    this.leader  = leader;
+
+    log.groups[id] = this;
+
+    for (var member of members)
+      member.group = this;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^GID:(.+) IDS:(.+) LID:(.+)/;
+
+    var match = regexp.exec(data);
+
+    var members = [];
+    for (var member of match[2].split(","))
+      members.push(log.getObject(member));
+
+    if (match) {
+      new GameGroup(log, match[1], members, log.getObject(match[3]));
+    }
+  }
+}
+parsers[11] = GameGroup.parse;
+
+class LogEntry {
+  constructor(log, line, time) {
+    this.log      = log;
+    this.time     = time;
+    this.file     = log.files[log.parseIndex];
+    this.line     = line;
+    this.position = null;
+
+    log.entries.push(this);
+  }
+
+  describe(context) {
+    return "Unknown: " + this.line;
+  }
+
+  static parse (log, line, time, match) {
+    new LogEntry(log, line, time);
+  }
+}
+LogEntry.prototype.typeName = "Unknown";
+
+class HitEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.ammo     = match[1];
+    this.attacker = log.getObject(match[2]);
+    this.target   = log.getObject(match[3]);
+
+    this.attacker.events.push(this);
+    this.attacker.attackerHits.push(this);
+
+    this.target.events.push(this);
+    this.target.targetHits.push(this);
+  }
+
+  describe(context) {
+    var text;
+
+    text = this.target.describe(context) + " was hit by " + this.attacker.describe(context) + " using " + this.ammo;
+
+    return text;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^AMMO:(.+) AID:(.+) TID:(.+)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new HitEntry(log, line, time, match);
+    }
+  }
+}
+HitEntry.prototype.typeName = "Hit";
+parsers[1] = HitEntry.parse;
+
+class DamageEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.damage           = parseFloat(match[1]);
+    this.attacker         = log.getObject(match[2]);
+    this.target           = log.getObject(match[3]);
+    this.position         = new Pos3D(match[4], match[5], match[6]);
+    this.cumulativeDamage = (this.target.cumulativeDamage += this.damage);
+
+    if (this.attacker) {
+      this.attacker.events.push(this);
+      if (!this.attacker.attackerDamage[this.target.uid])
+        this.attacker.attackerDamage[this.target.uid] = 0;
+      this.attacker.attackerDamage[this.target.uid] += this.damage;
+    }
+
+    this.target.events.push(this);
+    var attacker_uid = this.attacker ? this.attacker.uid : -1;
+    if (!this.target.targetDamage[attacker_uid])
+      this.target.targetDamage[attacker_uid] = 0;
+    this.target.targetDamage[attacker_uid] += this.damage;
+  }
+
+  describe(context) {
+    var text;
+
+    if (this.attacker)
+      text = this.attacker.describe(context) + " did " + (this.damage * 100).toFixed(1) + "% damage (to " + (this.cumulativeDamage * 100).toFixed(1) + "%) to " + this.target.describe(context);
+    else
+      text = this.target.describe(context) + " received " + (this.damage * 100).toFixed(1) + "% damage (to " + (this.cumulativeDamage * 100).toFixed(1) + "%)";
+
+    return text;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^DMG:(.+) AID:(.+) TID:(.+) POS\((.+),(.+),(.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new DamageEntry(log, line, time, match);
+    }
+  }
+}
+DamageEntry.prototype.typeName = "Damage";
+parsers[2] = DamageEntry.parse;
+
+class KillEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.attacker = log.getObject(match[1]);
+    this.target   = log.getObject(match[2]);
+    this.position = new Pos3D(match[3], match[4], match[5]);
+
+    if (this.attacker) {
+      this.attacker.events.push(this);
+      this.attacker.kills.push(this);
+    }
+
+    this.target.events.push(this);
+    console.assert(!this.target.killedBy)
+    this.target.killedBy = this;
+  }
+
+  describe(context) {
+    if (this.attacker)
+      return this.target.describe() + " was killed by " + this.attacker.describe();
+    else
+      return this.target.describe() + " was killed";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^AID:(.+) TID:(.+) POS\((.+),(.+),(.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new KillEntry(log, line, time, match);
+    }
+  }
+}
+KillEntry.prototype.typeName = "Kill";
+parsers[3] = KillEntry.parse;
+
+class FinalPlaneStateEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.plane    = log.getObject(match[1]);
+    this.pilot    = log.getObject(match[2]);
+    this.bullets  = parseInt(match[3]);
+    this.shells   = parseInt(match[4]);
+    this.bombs    = parseInt(match[5]);
+    this.rockets  = parseInt(match[6]);
+    this.position = new Pos3D(match[7], match[8], match[9]);
+
+    this.plane.events.push(this);
+    this.pilot.events.push(this);
+  }
+
+  describe(context) {
+    return this.plane.describe(context) + " final state: " + this.bullets + " bullets, " + this.shells + " shells, " + this.bombs + " bombs, " + this.rockets + " rockets";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^PLID:(.+) PID:(.+) BUL:(.+) SH:(.+) BOMB:(.+) RCT:(.+) \((.+),(.+),(.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new FinalPlaneStateEntry(log, line, time, match);
+    }
+  }
+}
+FinalPlaneStateEntry.prototype.typeName = "Final state";
+parsers[4] = FinalPlaneStateEntry.parse;
+
+class TakeoffEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.object   = log.getObject(match[1]);
+    this.position = new Pos3D(match[2], match[3], match[4]);
+
+    this.object.events.push(this);
+  }
+
+  describe(context) {
+    if (context == this.object)
+      return "Took off";
+    else
+      return this.object.describe(context) + " took off";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^PID:(.+) POS\((.+), (.+), (.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new TakeoffEntry(log, line, time, match);
+    }
+  }
+}
+TakeoffEntry.prototype.typeName = "Take off";
+parsers[5] = TakeoffEntry.parse;
+
+class LandedEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.object   = log.getObject(match[1]);
+    this.position = new Pos3D(match[2], match[3], match[4]);
+
+    this.object.events.push(this);
+  }
+
+  describe(context) {
+    if (context == this.object)
+      return "Landed";
+    else
+      return this.object.describe(context) + " landed";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^PID:(.+) POS\((.+), (.+), (.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new LandedEntry(log, line, time, match);
+    }
+  }
+}
+LandedEntry.prototype.typeName = "Land";
+parsers[6] = LandedEntry.parse;
+
+class MissionEndEntry extends LogEntry {
+  constructor(log, line, time) {
+    super(log, line, time);
+  }
+
+  describe(context) {
+    return "Mission ended";
+  }
+
+  static parse(log, line, time, data) {
+    new MissionEndEntry(log, line, time);
+  }
+}
+MissionEndEntry.prototype.typeName = "Mission end";
+parsers[7] = MissionEndEntry.parse;
+
+class ObjectSpawnedEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    // Can't necessarily create the object here, as group definitions
+    // can make forward references to object IDs, so get the object
+    // (which will create a new one if necessary)
+    this.object   = log.getObject(match[1]);
+    this.position = new Pos3D(match[6], match[7], match[8]);
+
+	if (this.object.type) {
+	  // Unfortunately object IDs can be reused, so if this object
+	  // has already been spawned, create a new one instead
+	  this.object = new GameObject(log, match[1], this.object.gen + 1);
+	}
+
+    this.object.type    = match[2];
+    this.object.country = match[3];
+    this.object.name    = match[4];
+    this.object.parent  = log.getObject(match[5]);
+
+    if (this.object.parent) {
+      this.object.parent.children.push(this.object);
+    }
+
+    if (this.object.name.startsWith("BotPilot_")) {
+      this.object.role = "Pilot";
+    }
+    if (this.object.name.startsWith("BotGunner_")) {
+      this.object.role = "Gunner";
+    }
+    if (match = this.object.name.match(/^Turret_[^_]+(?:_(.+))?/)) {
+      this.object.role = "Turret";
+      if (match[1])
+        this.object.role += " " + match[1];
+    }
+
+    this.object.events.push(this);
+  }
+
+  describe(context) {
+    var text = "Spawned"
+
+    if (context != this.object)
+      text += " " + this.object.describe(context);
+
+    return text;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^ID:(.+) TYPE:(.+) COUNTRY:(.+) NAME:(.+) PID:(.+) POS\((.+),(.+),(.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new ObjectSpawnedEntry(log, line, time, match);
+    }
+  }
+}
+ObjectSpawnedEntry.prototype.typeName = "Spawn";
+parsers[12] = ObjectSpawnedEntry.parse;
+
+class BotUninitEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.object   = log.getObject(match[1]);
+    this.position = new Pos3D(match[2], match[3], match[4]);
+
+    this.object.events.push(this);
+  }
+
+  describe (context) {
+    return this.object.describe() + " uninitialised";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^BOTID:(.+) POS\((.+),(.+),(.+)\)/;
+
+    var match = regexp.exec(data);
+    console.assert(match, data);
+
+    if (match) {
+      new BotUninitEntry(log, line, time, match);
+    }
+  }
+}
+BotUninitEntry.prototype.typeName = "Bot uninitialize";
+parsers[16] = BotUninitEntry.parse;
+
+class EjectEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.bot      = log.getObject(match[1]);
+    this.parent   = log.getObject(match[2]);
+    this.position = new Pos3D(match[3], match[4], match[5]);
+
+    this.bot.events.push(this);
+    this.parent.events.push(this);
+  }
+
+  describe(context) {
+    return this.bot.describe(context) + " bailed out of " + this.parent.describe(context);
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^BOTID:(.+) PARENTID:(.+) POS\((.+),(.+),(.+)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new EjectEntry(log, line, time, match);
+    }
+  }
+}
+EjectEntry.prototype.typeName = "Eject";
+parsers[18] = EjectEntry.parse;
+
+var fileRegexp = /^(missionReport.+)\[(\d+)\]\.txt$/;
+
+function filesSelected() {
+  for (var entry of document.getElementById("fileInput").files) {
+    var match = fileRegexp.exec(entry.name);
+
+    if (match) {
+      var basename = match[1];
+      var index    = match[2];
+
+      if (!missionLogs[basename])
+        missionLogs[basename] = new MissionLog(basename);
+
+      missionLogs[basename].files[index] = entry;
+    }
+  }
+
+  document.getElementById("progressBar").value = 0;
+  document.getElementById("progressBar").max   = document.getElementById("fileInput").files.length;
+
+  for (var mlog in missionLogs)
+    missionLogs[mlog].parseNext();
+}
+
+var table;
+
+$(document).ready( function () {
+  table = $('#missionLogTable').DataTable( {
+    columns: [
+      {data: "time", render: (data, type, row, meta) => type == "display" ? data.getUTCHours().toString().padStart(2, "0") + ":" + data.getMinutes().toString().padStart(2, "0") + ":" + (data.getSeconds() + (data.getMilliseconds() / 1000.0)).toFixed(2).padStart(5, "0") /*data.toLocaleTimeString(undefined, {timeZone: "UTC"})*/ : data},
+      {data: "position"},
+      {data: "typeName"},
+      {data: (row, type, set, meta) => row.describe(null)}
+    ],
+    scrollY: "100%",
+    paging: false,
+    deferRender: true,
+  } );
+} );
+
+function logSelected() {
+  console.log($('#missionSelector'));
+  console.log(document.getElementById('missionSelector').value);
+  table.clear().rows.add(missionLogs[document.getElementById('missionSelector').value].entries).draw();
+}
+
+//-->
+</script>
+</head>
+<body>
+<input id="fileInput" type="file" accept=".txt" multiple webkitdirectory oninput="filesSelected()"></input>
+<select id="missionSelector" oninput="logSelected()">
+</select>
+<progress id="progressBar"></progress>
+
+<table class="display compact" id="missionLogTable">
+<thead>
+<tr>
+<th>Time</th>
+<th>Location</th>
+<th>Type</th>
+<th>Event</th>
+</tr>
+</thead>
+<tbody>
+</tbody>
+</table>
+</body>
+</html>
