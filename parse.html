@@ -37,16 +37,17 @@ var parsers = {};
 
 class MissionLog {
   constructor(basename) {
-    this.basename      = basename;
-    this.entries       = [];
-    this.curObjects    = {};
-    this.allObjects    = {};
-    this.groups        = {};
-    this.airfields     = {};
-    this.files         = {};
-    this.parseIndex    = 0;
-    this.reader        = new FileReader();
-    this.reader.onload = () => this.parseFile();
+    this.basename       = basename;
+    this.entries        = [];
+    this.curObjects     = {};
+    this.allObjects     = {};
+    this.groups         = {};
+    this.airfields      = {};
+    this.influenceAreas = {};
+    this.files          = {};
+    this.parseIndex     = 0;
+    this.reader         = new FileReader();
+    this.reader.onload  = () => this.parseFile();
 
     var match = this.baseRegexp.exec(basename);
     this.realTime = new Date(match[1], match[2] - 1, match[3], match[4], match[5], match[6]);
@@ -102,6 +103,16 @@ class MissionLog {
       new Airfield(this, id);
 
     return this.airfields[id];
+  }
+
+  getInfluenceArea(id) {
+    if (!(id >= 0))
+      return null;
+
+    if (!this.influenceAreas[id])
+      new InfluenceArea(this, id);
+
+    return this.influenceAreas[id];
   }
 }
 MissionLog.prototype.baseRegexp = /^missionReport\((.+)-(.+)-(.+)_(.+)-(.+)-(.+)\)$/;
@@ -201,6 +212,38 @@ class Airfield {
     log.airfields[id] = this;
   }
 }
+
+class InfluenceArea {
+  constructor (log, id) {
+    this.log      = log;
+    this.id       = id;
+    this.boundary = []
+    this.events   = [];
+
+    console.assert(!log.influenceAreas[id]);
+    log.influenceAreas[id] = this;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^AID:(.+) BP\(((?:\([^,]+,[^,]+,[^,]+\),?)+)\)/;
+    var regexp2 = /\(([^,]+),([^,]+),([^,]+)\),?/y;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      var area = log.getInfluenceArea(match[1]);
+
+      area.boundary = [];
+
+      var pos;
+      while (pos = regexp2.exec(match[2])) {
+        area.boundary.push(new Pos3D(pos[1], pos[2], pos[3]));
+      }
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+parsers[14] = InfluenceArea.parse;
 
 class LogEntry {
   constructor(log, line, time) {
@@ -544,6 +587,41 @@ class ObjectSpawnedEntry extends LogEntry {
 }
 ObjectSpawnedEntry.prototype.typeName = "Spawn";
 parsers[12] = ObjectSpawnedEntry.parse;
+
+class InfluenceEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.area     = log.getInfluenceArea(match[1]);
+    this.country  = countries[match[2]];
+    this.enabled  = match[3] == "1";
+    this.counts   = match[4].split(",");
+
+    this.area.events.push(this);
+  }
+
+  describe(context) {
+    var str = "Influence update for ID " + this.area.id + ": Country " + this.country + ", " + (this.enabled ? "Enabled" : "Disabled");
+
+    for (var idx = 0; idx < this.counts.length; idx++)
+      str += ", " + coalitions[idx] + ": " + this.counts[idx];
+
+    return str;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^AID:(.+) COUNTRY:(.+) ENABLED:(.+) BC\((.*)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new InfluenceEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+InfluenceEntry.prototype.typeName = "Influence";
+parsers[13] = InfluenceEntry.parse;
 
 class BotUninitEntry extends LogEntry {
   constructor(log, line, time, match) {
