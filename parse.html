@@ -42,6 +42,7 @@ class MissionLog {
     this.curObjects    = {};
     this.allObjects    = {};
     this.groups        = {};
+    this.airfields     = {};
     this.files         = {};
     this.parseIndex    = 0;
     this.reader        = new FileReader();
@@ -91,6 +92,16 @@ class MissionLog {
       new GameObject(this, id);
 
     return this.curObjects[id];
+  }
+
+  getAirfield(id) {
+    if (!(id >= 0))
+      return null;
+
+    if (!this.airfields[id])
+      new Airfield(this, id);
+
+    return this.airfields[id];
   }
 }
 MissionLog.prototype.baseRegexp = /^missionReport\((.+)-(.+)-(.+)_(.+)-(.+)-(.+)\)$/;
@@ -179,6 +190,17 @@ class GameGroup {
   }
 }
 parsers[11] = GameGroup.parse;
+
+class Airfield {
+  constructor (log, id) {
+    this.log    = log;
+    this.id     = id;
+    this.events = [];
+
+    console.assert(!log.airfields[id]);
+    log.airfields[id] = this;
+  }
+}
 
 class LogEntry {
   constructor(log, line, time) {
@@ -431,6 +453,35 @@ class MissionEndEntry extends LogEntry {
 }
 MissionEndEntry.prototype.typeName = "Mission end";
 parsers[7] = MissionEndEntry.parse;
+
+class AirfieldEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.airfield = log.getAirfield(match[1]);
+    this.country  = countries[match[2]];
+    this.position = new Pos3D(match[3], match[4], match[5]);
+
+    this.airfield.events.push(this);
+  }
+
+  describe(context) {
+    return "Airfield update for ID " + this.airfield.id + ": Country " + this.country;
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^AID:(.+) COUNTRY:(.+) POS\((.+), (.+), (.+)\) IDS\((.*)\)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new AirfieldEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+AirfieldEntry.prototype.typeName = "Airfield";
+parsers[9] = AirfieldEntry.parse;
 
 class ObjectSpawnedEntry extends LogEntry {
   constructor(log, line, time, match) {
