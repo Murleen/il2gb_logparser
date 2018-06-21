@@ -9,6 +9,18 @@
 //<!--
 'use strict';
 
+var coalitions = {
+  0: "Neutral",
+  1: "Allies",
+  2: "Axis",
+}
+
+var countries = {
+  0:   "Neutral",
+  101: "USSR",
+  201: "Germany",
+}
+
 class Pos3D {
   constructor(x, y, z) {
     this.x = x;
@@ -437,7 +449,7 @@ class ObjectSpawnedEntry extends LogEntry {
 	}
 
     this.object.type    = match[2];
-    this.object.country = match[3];
+    this.object.country = countries[match[3]];
     this.object.name    = match[4];
     this.object.parent  = log.getObject(match[5]);
 
