@@ -543,7 +543,9 @@ class ObjectSpawnedEntry extends LogEntry {
     // can make forward references to object IDs, so get the object
     // (which will create a new one if necessary)
     this.object   = log.getObject(match[1]);
-    this.position = new Pos3D(match[6], match[7], match[8]);
+
+    if (match[6] && match[7] && match[8])
+      this.position = new Pos3D(match[6], match[7], match[8]);
 
 	if (this.object.type) {
 	  // Unfortunately object IDs can be reused, so if this object
@@ -585,7 +587,7 @@ class ObjectSpawnedEntry extends LogEntry {
   }
 
   static parse(log, line, time, data) {
-    var regexp = /^ID:(.+) TYPE:(.+) COUNTRY:(.+) NAME:(.+) PID:(.+) POS\((.+),(.+),(.+)\)/;
+    var regexp = /^ID:(.+) TYPE:(.+) COUNTRY:(.+) NAME:(.+) PID:([^ ]+)(?: POS\((.+),(.+),(.+)\))?/;
 
     var match = regexp.exec(data);
 
