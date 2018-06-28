@@ -171,6 +171,8 @@ function parseVersion (log, line, time, data) {
 
   if (match)
     console.assert(match[1] == 17);
+  else
+    new LogEntry(log, line, time);
 }
 parsers[15] = parseVersion;
 
@@ -197,7 +199,8 @@ class GameGroup {
 
     if (match) {
       new GameGroup(log, match[1], members, log.getObject(match[3]));
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 parsers[11] = GameGroup.parse;
@@ -296,7 +299,8 @@ class HitEntry extends LogEntry {
 
     if (match) {
       new HitEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 HitEntry.prototype.typeName = "Hit";
@@ -344,7 +348,8 @@ class DamageEntry extends LogEntry {
 
     if (match) {
       new DamageEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 DamageEntry.prototype.typeName = "Damage";
@@ -382,7 +387,8 @@ class KillEntry extends LogEntry {
 
     if (match) {
       new KillEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 KillEntry.prototype.typeName = "Kill";
@@ -415,7 +421,8 @@ class FinalPlaneStateEntry extends LogEntry {
 
     if (match) {
       new FinalPlaneStateEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 FinalPlaneStateEntry.prototype.typeName = "Final state";
@@ -445,7 +452,8 @@ class TakeoffEntry extends LogEntry {
 
     if (match) {
       new TakeoffEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 TakeoffEntry.prototype.typeName = "Take off";
@@ -475,7 +483,8 @@ class LandedEntry extends LogEntry {
 
     if (match) {
       new LandedEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 LandedEntry.prototype.typeName = "Land";
@@ -582,7 +591,8 @@ class ObjectSpawnedEntry extends LogEntry {
 
     if (match) {
       new ObjectSpawnedEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 ObjectSpawnedEntry.prototype.typeName = "Spawn";
@@ -645,7 +655,8 @@ class BotUninitEntry extends LogEntry {
 
     if (match) {
       new BotUninitEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 BotUninitEntry.prototype.typeName = "Bot uninitialize";
@@ -674,7 +685,8 @@ class EjectEntry extends LogEntry {
 
     if (match) {
       new EjectEntry(log, line, time, match);
-    }
+    } else
+      new LogEntry(log, line, time);
   }
 }
 EjectEntry.prototype.typeName = "Eject";
