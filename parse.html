@@ -292,6 +292,7 @@ class LogEntry {
   }
 
   static parse (log, line, time, match) {
+    console.log("Encountered unknown entry: " + line);
     new LogEntry(log, line, time);
   }
 }
