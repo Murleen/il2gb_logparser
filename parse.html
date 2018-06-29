@@ -564,6 +564,77 @@ class AirfieldEntry extends LogEntry {
 AirfieldEntry.prototype.typeName = "Airfield";
 parsers[9] = AirfieldEntry.parse;
 
+class PlayerStartEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.plane    = log.getObject(match[1]);
+    this.pilot    = log.getObject(match[2]);
+
+    console.assert(this.pilot.parent == this.plane, this.plane, this.pilot);
+
+    this.bullets  = parseInt(match[3]);
+    this.shells   = parseInt(match[4]);
+    this.bombs    = parseInt(match[5]);
+    this.rockets  = parseInt(match[6]);
+    this.position = new Pos3D(match[7], match[8], match[9]);
+
+    this.isPlayer = match[19] != "0"
+
+    if (this.isPlayer) {
+      this.player   = log.getPlayer(match[11]);
+
+      if (this.player.usernickid)
+        console.assert(this.player.usernickid == match[10]);
+      else
+        this.player.usernickid = match[10];
+
+      if (this.player.name)
+        console.assert(this.player.name == match[12]);
+      else
+        this.player.name = match[12];
+    }
+
+    console.assert(this.plane.type == match[13]);
+    console.assert(this.plane.country == countries[match[14]]);
+
+    this.formationId = match[15];
+    this.airfield    = log.getAirfield(match[16]);
+    this.startType   = match[17];
+
+    console.assert((match[18] == -1) ? (this.plane.parent == null) : (this.plane.parent && this.plane.parent.id == match[18]), this.plane.parent, match[18]);
+
+    this.istStart = match[20];
+    this.payload  = match[21];
+    this.fuel     = parseFloat(match[22]);
+    this.skin     = match[23];
+    this.wm       = match[24];
+
+    this.plane.events.push(this);
+    this.pilot.events.push(this);
+
+    if (this.isPlayer)
+      this.player.events.push(this);
+  }
+
+  describe(context) {
+    return (this.isPlayer ? this.player.describe(context) : "NPC") + " entered mission as " + this.pilot.describe(context);
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^PLID:(.+) PID:(.+) BUL:(.+) SH:(.+) BOMB:(.+) RCT:(.+) \((.+),(.+),(.+)\) IDS:(.+) LOGIN:(.+) NAME:(.*) TYPE:(.+) COUNTRY:(.+) FORM:(.+) FIELD:(.+) INAIR:(.+) PARENT:([^ ]+) (?:ISPL:(.+) ISTSTART:(.+) )?PAYLOAD:(.+) FUEL:(.+) SKIN:(.*) WM:(.+)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new PlayerStartEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+PlayerStartEntry.prototype.typeName = "Player start";
+parsers[10] = PlayerStartEntry.parse;
+
 class ObjectSpawnedEntry extends LogEntry {
   constructor(log, line, time, match) {
     super(log, line, time);
