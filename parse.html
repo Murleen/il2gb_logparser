@@ -535,6 +535,38 @@ class MissionEndEntry extends LogEntry {
 MissionEndEntry.prototype.typeName = "Mission end";
 parsers[7] = MissionEndEntry.parse;
 
+
+class ObjectiveEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.objectiveId = match[1];
+    this.position    = new Pos3D(match[2], match[3], match[4]);
+    this.coalition   = coalitions[match[5]];
+    this.type        = match[6];
+    this.result      = match[7];
+    this.iconType    = match[8];
+  }
+
+  describe(context) {
+    return this.coalition + " " + (this.type == 0 ? "primary objective" : "secondary objective " + this.type) + " " + (this.result == "1" ? "completed" : "failed");
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^OBJID:(.+) POS\((.+),(.+),(.+)\) COAL:(.+) TYPE:(.+) RES:(.+) ICTYPE:(.+)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new ObjectiveEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+ObjectiveEntry.prototype.typeName = "Objective";
+parsers[8] = ObjectiveEntry.parse;
+
+
 class AirfieldEntry extends LogEntry {
   constructor(log, line, time, match) {
     super(log, line, time);
