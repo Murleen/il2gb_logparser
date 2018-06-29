@@ -45,6 +45,7 @@ class MissionLog {
     this.airfields      = {};
     this.influenceAreas = {};
     this.files          = {};
+    this.players        = {};
     this.parseIndex     = 0;
     this.reader         = new FileReader();
     this.reader.onload  = () => this.parseFile();
@@ -114,11 +115,38 @@ class MissionLog {
 
     return this.influenceAreas[id];
   }
+
+  getPlayer(userid) {
+    if (!this.players[userid])
+      new Player(this, userid);
+
+    return this.players[userid];
+  }
+
 }
 MissionLog.prototype.baseRegexp = /^missionReport\((.+)-(.+)-(.+)_(.+)-(.+)-(.+)\)$/;
 MissionLog.prototype.lineRegexp = /^T:(\d+) AType:(\d+) (.*)$/;
 
 var missionLogs = {};
+
+class Player {
+  constructor(log, userid) {
+    this.userid     = userid;
+    this.usernickid = null;
+    this.name       = null;
+    this.events     = [];
+
+    console.assert(!log.players[userid]);
+    log.players[userid] = this;
+  }
+
+  describe(context) {
+    if (this.name)
+      return this.name;
+    else
+      return this.userid;
+  }
+}
 
 class GameObject {
   constructor(log, id, gen = 1) {
@@ -693,6 +721,70 @@ class EjectEntry extends LogEntry {
 }
 EjectEntry.prototype.typeName = "Eject";
 parsers[18] = EjectEntry.parse;
+
+class JoinEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.player = log.getPlayer(match[1]);
+
+    if (this.player.usernickid)
+      console.assert(match[2] == this.player.usernickid);
+    else
+      this.player.usernickid = match[2];
+
+    this.player.events.push(this);
+  }
+
+  describe(context) {
+    return this.player.describe(context) + " joined the server";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^USERID:(.+) USERNICKID:(.+)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new JoinEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+JoinEntry.prototype.typeName = "Join";
+parsers[20] = JoinEntry.parse;
+
+class LeaveEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    this.player = log.getPlayer(match[1]);
+
+    if (this.player.usernickid)
+      console.assert(match[2] == this.player.usernickid);
+    else
+      this.player.usernickid = match[2];
+
+    this.player.events.push(this);
+  }
+
+  describe(context) {
+    return this.player.describe(context) + " left the server";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^USERID:(.+) USERNICKID:(.+)/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new LeaveEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+LeaveEntry.prototype.typeName = "Leave";
+parsers[21] = LeaveEntry.parse;
 
 var fileRegexp = /^(missionReport.+)\[(\d+)\]\.txt$/;
 
