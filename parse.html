@@ -50,6 +50,17 @@ class MissionLog {
     this.reader         = new FileReader();
     this.reader.onload  = () => this.parseFile();
 
+    this.gameTime       = null;
+    this.missionFile    = null;
+    this.mid            = null;
+    this.gType          = null;
+    this.coalitionMap   = {};
+    this.modsEnabled    = null;
+    this.preset         = null;
+    this.aqmid          = null;
+    this.rounds         = null;
+    this.points         = null;
+
     var match = this.baseRegexp.exec(basename);
     this.realTime = new Date(match[1], match[2] - 1, match[3], match[4], match[5], match[6]);
   }
@@ -297,6 +308,47 @@ class LogEntry {
   }
 }
 LogEntry.prototype.typeName = "Unknown";
+
+class MissionStartEntry extends LogEntry {
+  constructor(log, line, time, match) {
+    super(log, line, time);
+
+    console.assert(log.gameTime == null);
+
+    log.gameTime    = new Date(match[1], match[2] - 1, match[3], match[4], match[5], match[6]);
+    log.missionFile = match[7];
+    log.mid         = match[8];
+    log.gType       = parseInt(match[9]);
+
+    for (var item of match[10].split(",")) {
+      var item_s = item.split(":");
+      log.coalitionMap[parseInt(item_s[0])] = coalitions[item_s[1]];
+    }
+
+    log.modsEnabled = match[12] == "1";
+    log.preset      = parseInt(match[13]);
+    log.aqmid       = parseInt(match[14]);
+    log.rounds      = parseInt(match[15]);
+    log.points      = parseInt(match[16]);
+  }
+
+  describe(context) {
+    return "Mission started";
+  }
+
+  static parse(log, line, time, data) {
+    var regexp = /^GDate:(.+)\.(.+)\.(.+) GTime:(.+):(.+):(.+) MFile:(.+) MID:(.*) GType:(.+) CNTRS:(.+) SETTS:(.+) MODS:(.+) PRESET:(.+) AQMID:([^ ]+)(?: ROUNDS: (.+) POINTS: (.+))?/;
+
+    var match = regexp.exec(data);
+
+    if (match) {
+      new MissionStartEntry(log, line, time, match);
+    } else
+      new LogEntry(log, line, time);
+  }
+}
+MissionStartEntry.prototype.typeName = "MissionStart";
+parsers[0] = MissionStartEntry.parse;
 
 class HitEntry extends LogEntry {
   constructor(log, line, time, match) {
